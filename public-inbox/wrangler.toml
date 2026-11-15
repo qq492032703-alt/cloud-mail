@@ -1,0 +1,12 @@
+name = "skypost-inbox"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+[[d1_databases]]
+binding = "db"
+database_name = "cloud-mail"
+database_id = "13cc9c55-df9c-4161-bfce-640a2ce792c8"
+
+[[routes]]
+pattern = "box.skypost.ccwu.cc"
+custom_domain = true
