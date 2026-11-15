@@ -1,0 +1,18 @@
+name: Deploy Public Inbox
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-inbox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Deploy skypost-inbox
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: public-inbox
+          command: deploy
