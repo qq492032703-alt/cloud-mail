@@ -10,10 +10,16 @@
           <Icon icon="ion:search-outline" width="15" height="15"/>
         </template>
       </el-input>
-      <div class="domain-chips">
-        <span class="chip" :class="{active: !domainFilter}" @click="domainFilter = ''"><Icon v-if="!domainFilter" class="chip-check" icon="ion:checkmark" width="13" height="13"/>全部 {{ accounts.length }}</span>
-        <span v-for="d in domainOptions" :key="d" class="chip" :class="{active: domainFilter === d}"
-              @click="domainFilter = domainFilter === d ? '' : d"><Icon v-if="domainFilter === d" class="chip-check" icon="ion:checkmark" width="13" height="13"/>{{ d }} · {{ countByDomain(d) }}</span>
+      <div class="chips-row">
+        <div class="domain-chips" :class="{expanded: chipsExpanded}">
+          <span class="chip" :class="{active: !domainFilter}" @click="domainFilter = ''"><Icon v-if="!domainFilter" class="chip-check" icon="ion:checkmark" width="13" height="13"/>全部 {{ accounts.length }}</span>
+          <span v-for="d in domainOptions" :key="d" class="chip" :class="{active: domainFilter === d}"
+                @click="domainFilter = domainFilter === d ? '' : d"><Icon v-if="domainFilter === d" class="chip-check" icon="ion:checkmark" width="13" height="13"/>{{ d }} · {{ countByDomain(d) }}</span>
+        </div>
+        <button class="chips-toggle" @click="chipsExpanded = !chipsExpanded">
+          {{ chipsExpanded ? '收起' : '展开' }}
+          <Icon :icon="chipsExpanded ? 'ion:chevron-up' : 'ion:chevron-down'" width="13" height="13"/>
+        </button>
       </div>
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
@@ -192,6 +198,8 @@ const domainList = computed(() => settingStore.domainList)
 const accounts = reactive([])
 const searchKey = ref('')
 const domainFilter = ref('')
+const chipsExpanded = ref(localStorage.getItem('account-chips-expanded') === '1')
+watch(chipsExpanded, (v) => localStorage.setItem('account-chips-expanded', v ? '1' : '0'))
 const domainOf = (email) => (String(email || '').split('@')[1] || '').toLowerCase()
 const domainOptions = computed(() => {
   const seen = []
@@ -687,13 +695,43 @@ path[fill="#ffdda1"] {
       border-radius: 999px;
     }
 
-    .domain-chips {
+    .chips-row {
       display: flex;
-      flex-wrap: nowrap;
-      overflow-x: auto;
+      align-items: flex-start;
       gap: 6px;
       margin-top: 8px;
-      padding-bottom: 2px;
+    }
+
+    .domain-chips {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-wrap: nowrap;
+      overflow: hidden;
+      max-height: 24px;
+      gap: 6px;
+    }
+
+    .domain-chips.expanded {
+      flex-wrap: wrap;
+      overflow: visible;
+      max-height: none;
+    }
+
+    .chips-toggle {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      height: 24px;
+      padding: 0 9px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid var(--el-border-color);
+      background: var(--el-bg-color);
+      color: var(--el-text-color-regular);
+      cursor: pointer;
+    }
 
       .chip {
         flex-shrink: 0;
@@ -723,7 +761,6 @@ path[fill="#ffdda1"] {
       .chip-check {
         animation: chip-in 0.15s ease-out;
       }
-    }
   }
 
   @keyframes chip-in {
