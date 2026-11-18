@@ -2,7 +2,7 @@
 // 只读展示 Cloud Mail D1 中某个受支持域名地址收到的邮件（含无人收件）。
 // 绑定: D1 变量名 db -> cloud-mail 数据库。无密码，知地址者可看，勿用于重要账号。
 const DOMAIN = "skypost.ccwu.cc";
-const DOMAINS = ["skypost.ccwu.cc", "liu492.ccwu.cc", "cloudpost.ccwu.cc", "skypost.de5.net", "skypost.us.ci", "skypost.cc.cd"];
+const DOMAINS = ["skypost.ccwu.cc", "liu492.ccwu.cc", "cloudpost.ccwu.cc", "skypost.de5.net", "skypost.us.ci", "skypost.cc.cd", "mailpost.ccwu.cc"];
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
