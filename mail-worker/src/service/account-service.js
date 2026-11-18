@@ -231,6 +231,15 @@ const accountService = {
 		await orm(c).update(account).set({name}).where(and(eq(account.userId, userId),eq(account.accountId, accountId))).run();
 	},
 
+	async setRemark(c, params, userId) {
+		const { remark, accountId } = params
+		const text = remark || ''
+		if (text.length > 200) {
+			throw new BizError('备注不能超过200个字');
+		}
+		await orm(c).update(account).set({remark: text}).where(and(eq(account.userId, userId),eq(account.accountId, accountId))).run();
+	},
+
 	async allAccount(c, params) {
 
 		let { userId, num, size } = params
