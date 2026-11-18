@@ -4,10 +4,24 @@
       <Icon v-perm="'account:add'" class="icon add" icon="ion:add-outline" width="23" height="23" @click="add"/>
       <Icon class="icon refresh" icon="ion:reload" width="18" height="18" @click="refresh"/>
     </div>
+    <div class="filter-bar">
+      <el-input v-model="searchKey" placeholder="搜索邮箱地址" clearable size="small">
+        <template #prefix>
+          <Icon icon="ion:search-outline" width="15" height="15"/>
+        </template>
+      </el-input>
+      <div class="domain-chips">
+        <span class="chip" :class="{active: !domainFilter}" @click="domainFilter = ''">全部 {{ accounts.length }}</span>
+        <span v-for="d in domainOptions" :key="d" class="chip" :class="{active: domainFilter === d}"
+              @click="domainFilter = domainFilter === d ? '' : d">{{ d }} · {{ countByDomain(d) }}</span>
+      </div>
+    </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
-        <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, index) in accounts" :key="item.accountId"
-                 @click="changeAccount(item)">
+        <template v-for="group in displayGroups" :key="group.domain">
+          <div class="group-head">@{{ group.domain }}<span class="group-count">{{ group.items.length }} 个</span></div>
+          <el-card class="item" :class="itemBg(item.accountId)" v-for="item in group.items" :key="item.accountId"
+                   @click="changeAccount(item)">
           <div class="account">
             {{ item.email }}
           </div>
@@ -25,7 +39,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">{{ $t('rename') }}</el-dropdown-item>
-                    <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item, index)">{{ $t('pin') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item)">{{ $t('pin') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId && hasPerm('account:delete')"
                                       @click="remove(item)">{{ $t('delete') }}
                     </el-dropdown-item>
@@ -34,7 +48,8 @@
               </el-dropdown>
             </div>
           </div>
-        </el-card>
+          </el-card>
+        </template>
 
         <!-- Initial Loading Skeleton -->
         <template v-if="loading">
@@ -66,11 +81,14 @@
           </el-skeleton>
         </template>
 
-        <div class="noLoading" v-if="noLoading && accounts.length > 0">
+        <div class="noLoading" v-if="noLoading && displayCount > 0">
           <div>{{ $t('noMoreData') }}</div>
         </div>
         <div class="empty" v-if="noLoading && accounts.length === 0">
           <el-empty :description="$t('noMessagesFound')"/>
+        </div>
+        <div class="empty" v-if="noLoading && accounts.length > 0 && displayCount === 0">
+          <el-empty description="没有符合条件的邮箱"/>
         </div>
       </div>
 
@@ -158,6 +176,45 @@ const showAdd = ref(false)
 const addLoading = ref(false);
 const domainList = computed(() => settingStore.domainList)
 const accounts = reactive([])
+const searchKey = ref('')
+const domainFilter = ref('')
+const domainOf = (email) => (String(email || '').split('@')[1] || '').toLowerCase()
+const domainOptions = computed(() => {
+  const seen = []
+  for (const d of (settingStore.domainList || [])) {
+    const dd = String(d).toLowerCase().replace(/^@/, '')
+    if (dd && !seen.includes(dd)) seen.push(dd)
+  }
+  for (const a of accounts) {
+    const d = domainOf(a.email)
+    if (d && !seen.includes(d)) seen.push(d)
+  }
+  return seen
+})
+const countByDomain = (d) => accounts.filter(a => domainOf(a.email) === d).length
+const displayGroups = computed(() => {
+  const key = searchKey.value.trim().toLowerCase()
+  const mainId = userStore.user?.account?.accountId
+  const filtered = accounts.filter(a =>
+      (!domainFilter.value || domainOf(a.email) === domainFilter.value) &&
+      (!key || a.email.toLowerCase().includes(key))
+  )
+  const sorted = [...filtered].sort((x, y) => {
+    if (x.accountId === mainId) return -1
+    if (y.accountId === mainId) return 1
+    return (y.sort - x.sort) || (y.accountId - x.accountId)
+  })
+  const groups = []
+  for (const d of domainOptions.value) {
+    const items = sorted.filter(a => domainOf(a.email) === d)
+    if (items.length) groups.push({domain: d, items})
+  }
+  const known = new Set(domainOptions.value)
+  const rest = sorted.filter(a => !known.has(domainOf(a.email)))
+  if (rest.length) groups.push({domain: domainOf(rest[0].email), items: rest})
+  return groups
+})
+const displayCount = computed(() => displayGroups.value.reduce((n, g) => n + g.items.length, 0))
 const noLoading = ref(false)
 const loading = ref(false)
 const followLoading = ref(false);
@@ -379,7 +436,7 @@ function add() {
   }, 100)
 }
 
-function setAsTop(account, index) {
+function setAsTop(account) {
   accountSetAsTop(account.accountId).then(() => {
     ElMessage({
       message: t('setSuccess'),
@@ -387,8 +444,11 @@ function setAsTop(account, index) {
       plain: true,
     })
 
-    const [item] = accounts.splice(index, 1);
-    accounts.splice(1, 0, item);
+    const index = accounts.findIndex(item => item.accountId === account.accountId);
+    if (index > 1) {
+      const [item] = accounts.splice(index, 1);
+      accounts.splice(1, 0, item);
+    }
 
   });
 }
@@ -446,6 +506,11 @@ function getAccountList() {
     loading.value = false
     followLoading.value = false
     first = false
+
+    // Load every page up front so search / domain grouping / newest-first cover all accounts.
+    if (list.length === queryParams.size && !noLoading.value) {
+      getAccountList()
+    }
   }).catch(() => {
     loading.value = false
     followLoading.value = false
@@ -556,6 +621,49 @@ path[fill="#ffdda1"] {
   background-color: var(--el-bg-color);
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .filter-bar {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--el-border-color);
+
+    .domain-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+
+      .chip {
+        font-size: 12px;
+        line-height: 1;
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: var(--el-fill-color-light);
+        color: var(--el-text-color-regular);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .chip.active {
+        background: var(--el-color-primary);
+        color: #fff;
+      }
+    }
+  }
+
+  .group-head {
+    font-size: 12px;
+    font-weight: 600;
+    color: #909399;
+    padding: 10px 12px 6px;
+
+    .group-count {
+      margin-left: 6px;
+      font-weight: 400;
+      color: var(--el-color-primary);
+    }
+  }
 
   .head-opt {
     display: flex;
@@ -584,11 +692,9 @@ path[fill="#ffdda1"] {
 
   .scrollbar {
     width: 100%;
-    height: calc(100% - 38px);
+    flex: 1;
+    min-height: 0;
     overflow: auto;
-    @media (max-width: 767px) {
-      height: calc(100% - 98px);
-    }
 
     .empty {
       display: flex;
