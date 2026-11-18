@@ -1,7 +1,8 @@
-// SkyPost 公开收件箱 v1 (2026-11-15)
-// 只读展示 Cloud Mail D1 中某个 @skypost.ccwu.cc 地址收到的邮件（含无人收件）。
+// SkyPost 公开收件箱 v2 (2026-11-18)
+// 只读展示 Cloud Mail D1 中某个受支持域名地址收到的邮件（含无人收件）。
 // 绑定: D1 变量名 db -> cloud-mail 数据库。无密码，知地址者可看，勿用于重要账号。
 const DOMAIN = "skypost.ccwu.cc";
+const DOMAINS = ["skypost.ccwu.cc", "liu492.ccwu.cc", "cloudpost.ccwu.cc"];
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -58,7 +59,8 @@ button{margin-top:10px;width:100%;padding:12px;border:0;border-radius:10px;backg
 }
 
 function validAddr(a) {
-  return /^[a-z0-9._%+-]+@skypost\.ccwu\.cc$/.test(a);
+  const m = /^[a-z0-9._%+-]+@([a-z0-9.-]+)$/.exec(a);
+  return !!m && DOMAINS.includes(m[1]);
 }
 
 export default {
@@ -70,7 +72,7 @@ export default {
 
     if (!inbox) {
       const body = `<h1>SkyPost 公开收件箱</h1>
-<div class="sub">输入完整的 @${DOMAIN} 地址，查看它收到的邮件</div>
+<div class="sub">输入完整的邮箱地址，查看它收到的邮件（支持 @${DOMAINS.join("、@")}）</div>
 <div class="warn">公开页面无密码，知道地址的人都能看。只适合接验证码、注册小号，别收重要邮件。邮件保留 7 天后自动删除。</div>
 <form method="get"><input type="text" name="inbox" placeholder="例如 abc@${DOMAIN}" autocomplete="off">
 <button type="submit">查看收件箱</button></form>`;
@@ -78,7 +80,7 @@ export default {
     }
 
     if (!validAddr(inbox)) {
-      return new Response(page("地址不对", `<h1>地址不对</h1><div class="sub">只支持 @${DOMAIN} 的完整地址</div><a class="btn" href="/">← 返回</a>`), { headers, status: 400 });
+      return new Response(page("地址不对", `<h1>地址不对</h1><div class="sub">只支持 @${DOMAINS.join("、@")} 的完整地址</div><a class="btn" href="/">← 返回</a>`), { headers, status: 400 });
     }
 
     const id = url.searchParams.get("id");
