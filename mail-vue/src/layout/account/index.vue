@@ -18,10 +18,9 @@
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
-        <template v-for="(group, gi) in displayGroups" :key="group.domain">
-          <div class="group-head">@{{ group.domain }}<span class="group-count">{{ group.items.length }} 个</span></div>
-          <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, ii) in group.items" :key="item.accountId"
-                   :style="{ animationDelay: Math.min((gi * 10 + ii) * 25, 300) + 'ms' }"
+        <template v-for="group in displayGroups" :key="group.domain">
+          <div class="group-head">{{ group.label || '@' + group.domain }}<span class="group-count">{{ group.items.length }} 个</span></div>
+          <el-card class="item" :class="itemBg(item.accountId)" v-for="item in group.items" :key="item.accountId"
                    @click="changeAccount(item)">
           <div class="account">
             {{ item.email }}
@@ -31,6 +30,7 @@
             <div class="send-email" @click.stop>
               <Icon @click="setAllReceive(item)" v-if="!item.allReceive" icon="eva:email-fill" width="22" height="22" color="#fccb1a"/>
               <Icon @click="setAllReceive(item)" v-else icon="flat-color-icons:folder" width="22" height="22" color="#23c4f1" />
+              <span class="latest-time" v-if="item.latestEmailTime">{{ fmtLatest(item.latestEmailTime) }}</span>
             </div>
             <div class="settings" @click.stop>
               <Icon icon="fluent-color:clipboard-24" width="22" height="22" @click.stop="copyAccount(item.email)"/>
@@ -206,19 +206,33 @@ const domainOptions = computed(() => {
   return seen
 })
 const countByDomain = (d) => accounts.filter(a => domainOf(a.email) === d).length
+const timeVal = (a) => a.latestEmailTime ? new Date(String(a.latestEmailTime).replace(' ', 'T') + 'Z').getTime() || 0 : 0
+const sortByActivity = (list) => [...list].sort((x, y) => {
+  const tx = timeVal(x), ty = timeVal(y)
+  if (tx !== ty) return ty - tx
+  return (y.sort - x.sort) || (y.accountId - x.accountId)
+})
+const fmtLatest = (ts) => {
+  const d = new Date(String(ts).replace(' ', 'T') + 'Z')
+  if (isNaN(d)) return ''
+  return d.toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false})
+}
+const recentItems = computed(() => {
+  if (searchKey.value.trim() || domainFilter.value) return []
+  return sortByActivity(accounts.filter(a => a.latestEmailTime)).slice(0, 5)
+})
 const displayGroups = computed(() => {
   const key = searchKey.value.trim().toLowerCase()
-  const mainId = userStore.user?.account?.accountId
   const filtered = accounts.filter(a =>
       (!domainFilter.value || domainOf(a.email) === domainFilter.value) &&
-      (!key || a.email.toLowerCase().includes(key))
+      (!key || a.email.toLowerCase().includes(key) || (a.remark || '').toLowerCase().includes(key))
   )
-  const sorted = [...filtered].sort((x, y) => {
-    if (x.accountId === mainId) return -1
-    if (y.accountId === mainId) return 1
-    return (y.sort - x.sort) || (y.accountId - x.accountId)
-  })
+  const recentIds = new Set(recentItems.value.map(a => a.accountId))
+  const sorted = sortByActivity(filtered.filter(a => !recentIds.has(a.accountId)))
   const groups = []
+  if (recentItems.value.length) {
+    groups.push({domain: '__recent__', label: '最近收信', items: recentItems.value})
+  }
   for (const d of domainOptions.value) {
     const items = sorted.filter(a => domainOf(a.email) === d)
     if (items.length) groups.push({domain: d, items})
@@ -675,11 +689,14 @@ path[fill="#ffdda1"] {
 
     .domain-chips {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      overflow-x: auto;
       gap: 6px;
       margin-top: 8px;
+      padding-bottom: 2px;
 
       .chip {
+        flex-shrink: 0;
         display: inline-flex;
         align-items: center;
         gap: 3px;
@@ -790,24 +807,18 @@ path[fill="#ffdda1"] {
     margin-top: 15px;
   }
 
-  /* Motion Prompt #081 Hover lift (0.3s ease-out, shadow 6/2/0.08 -> 22/12/0.22) + #074 Fade-in rise (28px, 0.7s ease-out) */
   .item {
     background-color: var(--el-bg-color);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 10px;
-    margin-bottom: 11px;
+    margin-bottom: 8px;
     margin-left: 10px;
     margin-right: 10px;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(28, 35, 51, 0.08);
-    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
-    animation: account-rise 0.7s ease-out backwards;
+    transition: border-color 0.15s ease-out;
 
     &:hover {
-      transform: translateY(-10px);
-      box-shadow: 0 12px 22px rgba(28, 35, 51, 0.22);
-      position: relative;
-      z-index: 1;
+      border-color: var(--el-color-primary-light-5);
     }
 
     .account {
@@ -844,6 +855,13 @@ path[fill="#ffdda1"] {
       .send-email {
         display: flex;
         align-items: center;
+
+        .latest-time {
+          margin-left: 6px;
+          font-size: 11px;
+          color: var(--el-text-color-secondary);
+          white-space: nowrap;
+        }
       }
     }
 
@@ -909,23 +927,6 @@ path[fill="#ffdda1"] {
   position: fixed;
 }
 
-/* Motion Prompt #074 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#074 */
-/* Motion Prompt #081 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#081 */
 /* Motion Prompt #061 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#061 */
-@keyframes account-rise {
-  from { opacity: 0; transform: translateY(28px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .account-box .item {
-    animation: none;
-    transition: none;
-  }
-
-  .account-box .item:hover {
-    transform: none;
-  }
-}
 
 </style>
