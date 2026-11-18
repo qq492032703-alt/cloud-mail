@@ -1,0 +1,36 @@
+name: Add Remark Column (one-off)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  alter:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+    steps:
+      - name: Write minimal wrangler config
+        run: |
+          mkdir -p tmp-alter
+          cat > tmp-alter/wrangler.toml <<EOF
+          name = "tmp-alter"
+          main = "worker.js"
+          compatibility_date = "2024-11-01"
+          [[d1_databases]]
+          binding = "db"
+          database_name = "cloud-mail"
+          database_id = "$D1_DATABASE_ID"
+          EOF
+          echo 'export default { fetch() { return new Response("ok") } }' > tmp-alter/worker.js
+      - name: Add remark column if missing
+        run: |
+          COUNT=$(npx -y wrangler@4 d1 execute cloud-mail --remote -c tmp-alter/wrangler.toml --json --command "SELECT name FROM pragma_table_info('account') WHERE name = 'remark';" | jq '[.[].results | length] | add // 0')
+          echo "existing remark columns: $COUNT"
+          if [ "$COUNT" = "0" ]; then
+            npx -y wrangler@4 d1 execute cloud-mail --remote -c tmp-alter/wrangler.toml --command "ALTER TABLE account ADD COLUMN remark TEXT DEFAULT '';"
+            echo "column added"
+          else
+            echo "column already exists, skip"
+          fi
