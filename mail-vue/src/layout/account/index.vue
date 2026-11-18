@@ -11,20 +11,22 @@
         </template>
       </el-input>
       <div class="domain-chips">
-        <span class="chip" :class="{active: !domainFilter}" @click="domainFilter = ''">全部 {{ accounts.length }}</span>
+        <span class="chip" :class="{active: !domainFilter}" @click="domainFilter = ''"><Icon v-if="!domainFilter" class="chip-check" icon="ion:checkmark" width="13" height="13"/>全部 {{ accounts.length }}</span>
         <span v-for="d in domainOptions" :key="d" class="chip" :class="{active: domainFilter === d}"
-              @click="domainFilter = domainFilter === d ? '' : d">{{ d }} · {{ countByDomain(d) }}</span>
+              @click="domainFilter = domainFilter === d ? '' : d"><Icon v-if="domainFilter === d" class="chip-check" icon="ion:checkmark" width="13" height="13"/>{{ d }} · {{ countByDomain(d) }}</span>
       </div>
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
-        <template v-for="group in displayGroups" :key="group.domain">
+        <template v-for="(group, gi) in displayGroups" :key="group.domain">
           <div class="group-head">@{{ group.domain }}<span class="group-count">{{ group.items.length }} 个</span></div>
-          <el-card class="item" :class="itemBg(item.accountId)" v-for="item in group.items" :key="item.accountId"
+          <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, ii) in group.items" :key="item.accountId"
+                   :style="{ animationDelay: Math.min((gi * 10 + ii) * 25, 300) + 'ms' }"
                    @click="changeAccount(item)">
           <div class="account">
             {{ item.email }}
           </div>
+          <div class="remark" v-if="item.remark">{{ item.remark }}</div>
           <div class="opt">
             <div class="send-email" @click.stop>
               <Icon @click="setAllReceive(item)" v-if="!item.allReceive" icon="eva:email-fill" width="22" height="22" color="#fccb1a"/>
@@ -38,6 +40,7 @@
                 <Icon icon="fluent:settings-24-filled" width="21" height="21" color="#909399"/>
                 <template #dropdown>
                   <el-dropdown-menu>
+                    <el-dropdown-item @click="openRemark(item)">备注</el-dropdown-item>
                     <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">{{ $t('rename') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item)">{{ $t('pin') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId && hasPerm('account:delete')"
@@ -143,6 +146,16 @@
         </el-button>
       </div>
     </el-dialog>
+    <el-dialog v-model="remarkShow" title="邮箱备注">
+      <div class="container">
+        <el-input v-model="remarkText" type="textarea" :rows="3" maxlength="200" show-word-limit
+                  placeholder="比如：注册了某某网站、用来收什么验证码" autocomplete="off">
+        </el-input>
+        <el-button class="btn" type="primary" @click="setRemark" :loading="remarkLoading"
+        >{{ $t('save') }}
+        </el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 <script setup>
@@ -153,6 +166,7 @@ import {
   accountAdd,
   accountDelete,
   accountSetName,
+  accountSetRemark,
   accountSetAllReceive,
   accountSetAsTop
 } from "@/request/account.js";
@@ -222,6 +236,9 @@ const verifyShow = ref(false)
 const setNameShow = ref(false)
 const setNameLoading = ref(false)
 const accountName = ref(null)
+const remarkShow = ref(false)
+const remarkLoading = ref(false)
+const remarkText = ref('')
 const addRef = ref({})
 const scrollbarRef = ref({})
 let account = null
@@ -353,6 +370,30 @@ function openSetName(accountItem) {
   accountName.value = accountItem.name
   account = accountItem
   setNameShow.value = true
+}
+
+function openRemark(accountItem) {
+  remarkText.value = accountItem.remark || ''
+  account = accountItem
+  remarkShow.value = true
+}
+
+function setRemark() {
+
+  if (remarkLoading.value) return
+
+  remarkLoading.value = true
+  accountSetRemark(account.accountId, remarkText.value).then(() => {
+    account.remark = remarkText.value
+    remarkShow.value = false
+    ElMessage({
+      message: t('saveSuccessMsg'),
+      type: "success",
+      plain: true
+    })
+  }).finally(() => {
+    remarkLoading.value = false
+  })
 }
 
 function setAllReceive(account) {
@@ -628,6 +669,10 @@ path[fill="#ffdda1"] {
     padding: 8px 10px;
     border-bottom: 1px solid var(--el-border-color);
 
+    :deep(.el-input__wrapper) {
+      border-radius: 999px;
+    }
+
     .domain-chips {
       display: flex;
       flex-wrap: wrap;
@@ -635,31 +680,59 @@ path[fill="#ffdda1"] {
       margin-top: 8px;
 
       .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
         font-size: 12px;
         line-height: 1;
         padding: 5px 9px;
         border-radius: 999px;
+        border: 1px solid transparent;
         background: var(--el-fill-color-light);
         color: var(--el-text-color-regular);
         cursor: pointer;
         user-select: none;
+        transition: all 0.15s ease-out;
       }
 
+      /* Motion Prompt #061 Filter chips: active chip turns light blue with a check, 0.15s ease-out */
       .chip.active {
-        background: var(--el-color-primary);
-        color: #fff;
+        background: var(--el-color-primary-light-9);
+        color: var(--el-color-primary);
+        border-color: var(--el-color-primary-light-5);
+        font-weight: 600;
+      }
+
+      .chip-check {
+        animation: chip-in 0.15s ease-out;
       }
     }
   }
 
+  @keyframes chip-in {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
   .group-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12px;
     font-weight: 600;
     color: #909399;
     padding: 10px 12px 6px;
 
+    &::before {
+      content: '';
+      width: 3px;
+      height: 12px;
+      border-radius: 2px;
+      background: var(--el-color-primary);
+    }
+
     .group-count {
-      margin-left: 6px;
+      margin-left: 2px;
       font-weight: 400;
       color: var(--el-color-primary);
     }
@@ -717,19 +790,40 @@ path[fill="#ffdda1"] {
     margin-top: 15px;
   }
 
+  /* Motion Prompt #081 Hover lift (0.3s ease-out, shadow 6/2/0.08 -> 22/12/0.22) + #074 Fade-in rise (28px, 0.7s ease-out) */
   .item {
     background-color: var(--el-bg-color);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 10px;
     margin-bottom: 11px;
     margin-left: 10px;
     margin-right: 10px;
     cursor: pointer;
+    box-shadow: 0 2px 6px rgba(28, 35, 51, 0.08);
+    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+    animation: account-rise 0.7s ease-out backwards;
+
+    &:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 12px 22px rgba(28, 35, 51, 0.22);
+      position: relative;
+      z-index: 1;
+    }
 
     .account {
       font-weight: 400;
       font-size: 15px;
-      margin-bottom: 20px;
+      margin-bottom: 6px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .remark {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--el-text-color-secondary);
+      margin-bottom: 10px;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
@@ -813,6 +907,25 @@ path[fill="#ffdda1"] {
   opacity: 0;
   pointer-events: none;
   position: fixed;
+}
+
+/* Motion Prompt #074 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#074 */
+/* Motion Prompt #081 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#081 */
+/* Motion Prompt #061 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#061 */
+@keyframes account-rise {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-box .item {
+    animation: none;
+    transition: none;
+  }
+
+  .account-box .item:hover {
+    transform: none;
+  }
 }
 
 </style>
