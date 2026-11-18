@@ -5,6 +5,7 @@ import userService from './user-service';
 import emailService from './email-service';
 import orm from '../entity/orm';
 import account from '../entity/account';
+import email from '../entity/email';
 import { and, asc, eq, gt, inArray, count, sql, ne, or, lt, desc } from 'drizzle-orm';
 import {accountConst, isDel, settingConst} from '../const/entity-const';
 import settingService from './setting-service';
@@ -111,7 +112,7 @@ const accountService = {
 		return orm(c).select().from(account).where(sql`${account.email} COLLATE NOCASE = ${email}`).get();
 	},
 
-	list(c, params, userId) {
+	async list(c, params, userId) {
 
 		let { accountId, size, lastSort } = params;
 
@@ -131,7 +132,7 @@ const accountService = {
 			lastSort = 9999999999;
 		}
 
-		return orm(c).select().from(account).where(
+		const rows = await orm(c).select().from(account).where(
 			and(
 				eq(account.userId, userId),
 				eq(account.isDel, isDel.NORMAL),
@@ -146,6 +147,19 @@ const accountService = {
 			.orderBy(desc(account.sort), asc(account.accountId))
 			.limit(size)
 			.all();
+
+		// Attach each account's latest received-email time so the frontend can
+		// float the mailbox that just received a verification code to the top.
+		const latestRows = await orm(c).select({ accountId: email.accountId, latest: sql`MAX(${email.createTime})` })
+			.from(email)
+			.where(and(eq(email.userId, userId), eq(email.type, 0), eq(email.isDel, isDel.NORMAL)))
+			.groupBy(email.accountId)
+			.all();
+		const latestMap = new Map(latestRows.map(r => [r.accountId, r.latest]));
+		for (const row of rows) {
+			row.latestEmailTime = latestMap.get(row.accountId) || null;
+		}
+		return rows;
 	},
 
 	async delete(c, params, userId) {
